@@ -21,7 +21,7 @@ enum menueEbene zwischnEbeneTwo;
 enum menueEbene zwischnEbeneThree;
 enum menueEbene zwischnEbeneFour;
 enum menueEbene zwischnEbeneFive;
-
+enum menueEbene zwischenEbeneSix;
 
 boolean neueEingabe = false;
 xTaskHandle metadataTaskHandle;
@@ -35,12 +35,14 @@ void touchTask(void *parameter);
 void timeTask(void *parameter);
 void volumeTask(void* parameter);
 void volumeUpdateTask(void* parameter);
+void voltageTask(void* parameter);
 
 
 xTaskHandle touchTaskHandle;
 xTaskHandle timeTaskHandle;
 xTaskHandle volumeTaskHandle;
 xTaskHandle volumeUpdateTaskHandle;
+xTaskHandle voltageTaskHandle;
 
 
 void drawButton(uint8_t x, uint8_t y,uint8_t width,uint8_t height,const char* text,uint16_t color,const uint8_t font[]);
@@ -291,7 +293,7 @@ voltageSprite.loadFont(GothamMedium26);
 
   //Seriial Communication
 
-  //Serial.begin(115200);
+  Serial.begin(115200);
   Serial.printf("Die Übertragung beginnt!\n");
   
   
@@ -311,6 +313,7 @@ voltageSprite.loadFont(GothamMedium26);
   xTaskCreate(timeTask,"Time Task",4096,NULL,4,&timeTaskHandle);
   xTaskCreate(volumeTask,"Volume Task",4096,NULL,4,&volumeTaskHandle);
   xTaskCreate(volumeUpdateTask,"Volume Update Task",2048,NULL,4,&volumeUpdateTaskHandle);
+  xTaskCreate(voltageTask,"Voltage Task",2048,NULL,5,&voltageTaskHandle);
 
 
 
@@ -390,10 +393,7 @@ void metadataTask(void *parameter){
 
     }
 
-
-    xSemaphoreTake(WIREMutex,portMAX_DELAY);
-    busVoltage_V = ina219.getBusVoltage_V();
-    xSemaphoreGive(WIREMutex);
+    
     voltageSprite.fillRect(0,0,90,40,METADATA_BACKGROUND_COLOR);
     sprintf(outputVoltage,"%2.2fV",busVoltage_V);
     voltageSprite.drawString(outputVoltage,5,5);
@@ -432,6 +432,9 @@ void metadataTask(void *parameter){
       
     }
     vTaskDelay(pdMS_TO_TICKS(40));
+    if(aktuelleEbene != metadata){
+      vTaskSuspend(NULL);
+    }
     if(titleToLong){
       	scrollByOne(titleTextSprite,title,METADATA_X_POS,METADATA_Y_START_POS,titlePos,titleLength,0);
 
@@ -533,6 +536,7 @@ void menueTask(void *parameter){
 
 for(;;){
   xTaskNotifyWait(ULONG_MAX,ULONG_MAX,NULL,portMAX_DELAY);
+  Serial.printf("Der Menuetask ist aktiv\n");
   xSemaphoreTake(displayMutex,portMAX_DELAY);
   mainScreen.startWrite();
   png.openFLASH((uint8_t *)Menue,sizeof(Menue),pngDrawCallback);
@@ -576,17 +580,20 @@ for(;;){
 void touchTask(void *parameter){
   
   for(;;){
-    //Serial.printf("Der Touch Task lebt noch\n");
-  xSemaphoreTake(WIREMutex,portMAX_DELAY);
-  touchPosX = (ft6336u.read_touch1_y());
-  touchPosY = (320 - ft6336u.read_touch1_x());
-  xSemaphoreGive(WIREMutex);
+    Serial.printf("Der Touch Task lebt noch\n");
+  if(xSemaphoreTake(WIREMutex,portMAX_DELAY) == pdTRUE){
+    touchPosX = (ft6336u.read_touch1_y());
+    touchPosY = (320 - ft6336u.read_touch1_x());
+  
+    xSemaphoreGive(WIREMutex);
+  }
+  
   
   neueEingabe = false;
 
   if(prevTouchPosX != touchPosX && prevTouchPosY != touchPosY){
     if(touchPosX != 257 && touchPosY != 63){
-      //Serial.printf("X: %d,Y: %d aktuelle Ebene: %d, Connection State: %d\n",touchPosX,touchPosY,aktuelleEbene,connectionState);
+      Serial.printf("X: %d,Y: %d aktuelle Ebene: %d, \n",touchPosX,touchPosY,aktuelleEbene);
       
       neueEingabe = true;
       prevTouchPosX = touchPosX;
@@ -595,7 +602,7 @@ void touchTask(void *parameter){
     
 
   }
-  
+  Serial.printf("Landmarke\n");
   
   if(neueEingabe){
     
@@ -621,15 +628,15 @@ void touchTask(void *parameter){
           xSemaphoreGive(serialMutex);
         }
         if(((BUTTON_ONE_X_POS <= touchPosX) && ((BUTTON_ONE_X_POS + BUTTON_ONE_WIDTH)>= touchPosX)) && ((BUTTON_ONE_Y_POS <= touchPosY) && ((BUTTON_ONE_Y_POS + BUTTON_ONE_WIDTH)>= touchPosY))){
-          //Serial.println("Knopf 1 gedrückt");
-          //Serial.printf("Es wird versucht den Mutex zu bekommen\n");
+          Serial.println("Knopf 1 gedrückt");
+          Serial.printf("Es wird versucht den Mutex zu bekommen\n");
           vTaskSuspend(metadataTaskHandle);
-          xSemaphoreTake(ebeneMutex,portMAX_DELAY);
-          //Serial.printf("Mutex erhalten\n");
-          aktuelleEbene = hauptmenue;
-          //Serial.printf("Rueckgabestatus: %d",xSemaphoreGive(ebeneMutex));
-          xSemaphoreGive(ebeneMutex);
-          
+          if(xSemaphoreTake(ebeneMutex,portMAX_DELAY == pdTRUE)){
+            Serial.printf("Mutex erhalten\n");
+            aktuelleEbene = hauptmenue;
+            
+            xSemaphoreGive(ebeneMutex);
+          }
           vTaskDelay(20);
           xTaskNotify(menueTaskHandle,0,eNoAction);
         }
@@ -662,7 +669,8 @@ void touchTask(void *parameter){
         break;
 
       }
-      
+        
+
       case hauptmenue:{
         if(touchPosX>(MENUE_ONE_X_POS-20) && touchPosX < (MENUE_ONE_X_POS+MENUE_ONE_WIDTH+20) && touchPosY > (MENUE_ONE_Y_POS-5) && touchPosY < (MENUE_ONE_Y_POS + MENUE_ONE_HEIGHT+5)){
           movingHeads = !movingHeads;
@@ -730,7 +738,8 @@ void touchTask(void *parameter){
         
         break;
       }
-      
+        Serial.printf("Landmarke\n");
+
     }
     vTaskDelay(pdMS_TO_TICKS(120));
     
@@ -927,4 +936,21 @@ void volumeUpdateTask(void* parameter){
     }
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
+}
+void voltageTask(void* parameter){
+
+for(;;){
+
+  xSemaphoreTake(ebeneMutex,portMAX_DELAY);
+  zwischenEbeneSix = aktuelleEbene;
+  xSemaphoreGive(ebeneMutex);
+  if(zwischenEbeneSix == metadata){
+    xSemaphoreTake(WIREMutex,portMAX_DELAY);
+    busVoltage_V = ina219.getBusVoltage_V();
+    
+    xSemaphoreGive(WIREMutex);
+  }
+  vTaskDelay(pdMS_TO_TICKS(500));
+}
+
 }
