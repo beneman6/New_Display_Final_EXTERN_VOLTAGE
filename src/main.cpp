@@ -276,7 +276,7 @@ void setup()
 
   // Seriial Communication
 
-  Serial.begin(115200);
+  //Serial.begin(115200);
   Serial.printf("Die Übertragung beginnt!\n");
 
   SerialPort.begin(115200, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
@@ -307,7 +307,8 @@ void setup()
   // Spannungsüberwachung
   ina219.init();
   ina219.setADCMode(SAMPLE_MODE_128);
-  ina219.setBusRange(BRNG_16);
+  ina219.setBusRange(BRNG_32);
+  //ina219.setShuntVoltOffset_mV(2000);
 }
 
 void loop()
@@ -958,7 +959,7 @@ void voltageTask(void *parameter)
     if (zwischenEbeneSix == metadata)
     {
       xSemaphoreTake(WIREMutex, portMAX_DELAY);
-      busVoltage_V = ina219.getBusVoltage_V();
+      busVoltage_V = (ina219.getBusVoltage_V() + 1.0);
 
       xSemaphoreGive(WIREMutex);
     }
